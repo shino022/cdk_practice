@@ -25,7 +25,7 @@ export class WsServerlessPatternsStack extends Stack {
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       removalPolicy: RemovalPolicy.DESTROY
     });
-    console.log(usersTable.tableName);
+    
     new CfnOutput(this, 'UsersTable', {
       description: 'DynamoDB Users table',
       value: usersTable.tableName
