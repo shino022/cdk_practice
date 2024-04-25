@@ -1,0 +1,18 @@
+{
+  "name": "authorizer",
+  "version": "1.0.0",
+  "description": "API authorizer",
+  "main": "index.ts",
+  "license": "MIT",
+  "scripts": {
+    "lint": "estlint '*.ts' --quite --fix",
+    "compile": "tsc",
+    "test": "jest"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.119"
+  },
+  "dependencies": {
+    "aws-jwt-verify": "^4.0.0"
+  }
+}
