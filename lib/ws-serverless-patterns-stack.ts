@@ -11,6 +11,7 @@ import {
 } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 
+import * as apigateway from 'aws-cdk-lib/aws-apigateway';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as lambda_nodejs from 'aws-cdk-lib/aws-lambda-nodejs';
@@ -25,7 +26,7 @@ export class WsServerlessPatternsStack extends Stack {
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       removalPolicy: RemovalPolicy.DESTROY
     });
-    
+
     new CfnOutput(this, 'UsersTable', {
       description: 'DynamoDB Users table',
       value: usersTable.tableName
@@ -37,6 +38,7 @@ export class WsServerlessPatternsStack extends Stack {
       timeout: Duration.seconds(100),
       tracing: lambda.Tracing.ACTIVE,
     };
+
     const usersFunction = new lambda_nodejs.NodejsFunction(this, 'users-function', {
       entry: './src/api/users/index.ts',
       handler: 'handler',
@@ -52,5 +54,28 @@ export class WsServerlessPatternsStack extends Stack {
       description: 'Lambda function used to perform actions on the users data',
       value: usersFunction.functionName,
     });
+
+    const api = new apigateway.RestApi(this, 'users-api', {
+      deployOptions: {
+        stageName: 'prod',
+        tracingEnabled: true,
+      }
+    });
+    Tags.of(api).add('Name', `${Aws.STACK_NAME}-api`);
+    Tags.of(api).add('Stack', `${Aws.STACK_NAME}`);
+
+    new CfnOutput(this, 'UsersApi', {
+      description: 'API Gateway endpoint URL',
+      value: api.url,
+    });
+
+    const users = api.root.addResource('users');
+    users.addMethod('GET', new apigateway.LambdaIntegration(usersFunction));
+    users.addMethod('POST', new apigateway.LambdaIntegration(usersFunction));
+
+    const user = users.addResource('{userid}');
+    user.addMethod('DELETE', new apigateway.LambdaIntegration(usersFunction));
+    user.addMethod('GET', new apigateway.LambdaIntegration(usersFunction));
+    user.addMethod('PUT', new apigateway.LambdaIntegration(usersFunction));
   }
 }
