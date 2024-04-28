@@ -82,7 +82,6 @@ const createUser = (event: APIGatewayEvent): Promise<APIGatewayProxyResult> => {
   const body = JSON.parse(event.body || '{}');
   body['timestamp'] = new Date().toISOString();
   body['userid'] = uuidv4();
-  console.log('@@Env: ', process.env);
   return documentClient.send(new PutCommand({
     TableName: USERS_TABLE,
     Item: {
