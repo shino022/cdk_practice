@@ -17,6 +17,7 @@ import * as cognito from 'aws-cdk-lib/aws-cognito';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as lambda_nodejs from 'aws-cdk-lib/aws-lambda-nodejs';
+import * as logs from 'aws-cdk-lib/aws-logs';
 
 export class WsServerlessPatternsStack extends Stack {
   constructor(scope: Construct, id: string, props?: StackProps) {
@@ -67,12 +68,36 @@ export class WsServerlessPatternsStack extends Stack {
     const authorizer = new apigateway.TokenAuthorizer(this, 'api-authorizer', {
       handler: authorizerFunction,
     });
-    
+
+    const logGroup = new logs.LogGroup(this, 'api-access-logs', {
+      retention: logs.RetentionDays.ONE_MONTH,
+      logGroupName: `/${Aws.STACK_NAME}/ApiAccessLogs`,
+    });
+
     const api = new apigateway.RestApi(this, 'users-api', {
       defaultMethodOptions: { authorizer },
+      cloudWatchRole: true,
       deployOptions: {
         stageName: 'prod',
         tracingEnabled: true,
+        accessLogDestination: new apigateway.LogGroupLogDestination(logGroup),
+        accessLogFormat: apigateway.AccessLogFormat.jsonWithStandardFields({
+          ip: true,
+          caller: true,
+          user: true,
+          requestTime: true,
+          httpMethod: true,
+          resourcePath: true,
+          status: true,
+          protocol: true,
+          responseLength: true,
+        }),
+        methodOptions: {
+          '/*/*': {
+            loggingLevel: apigateway.MethodLoggingLevel.INFO,
+            dataTraceEnabled: true,
+          }
+        }
       }
     });
     Tags.of(api).add('Name', `${Aws.STACK_NAME}-api`);
