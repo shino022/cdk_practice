@@ -12,12 +12,15 @@ import {
 } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 
+import * as cloudwatchActions from 'aws-cdk-lib/aws-cloudwatch-actions';
 import * as apigateway from 'aws-cdk-lib/aws-apigateway';
+import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
 import * as cognito from 'aws-cdk-lib/aws-cognito';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as lambda_nodejs from 'aws-cdk-lib/aws-lambda-nodejs';
 import * as logs from 'aws-cdk-lib/aws-logs';
+import * as sns from 'aws-cdk-lib/aws-sns';
 
 export class WsServerlessPatternsStack extends Stack {
   constructor(scope: Construct, id: string, props?: StackProps) {
@@ -180,6 +183,63 @@ export class WsServerlessPatternsStack extends Stack {
     }); 
     authorizerFunction.addEnvironment('ADMIN_GROUP_NAME', adminGroup.groupName || '');
 
+    const alarmsTopic = new sns.Topic(this, 'alarms-topic', {
+      displayName: 'Alarms topic',
+    });
+    Tags.of(alarmsTopic).add('Stack', `${Aws.STACK_NAME}`);
+
+    const apiMetric = api.metricServerError({
+      statistic: 'Sum',
+      period: Duration.seconds(60),
+    });
+
+    const apiAlarm = new cloudwatch.Alarm(this, 'rest-api-errors-alarm', {
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+      threshold: 1,
+      evaluationPeriods: 1,
+      metric: apiMetric,
+    });
+    apiAlarm.addAlarmAction(new cloudwatchActions.SnsAction(alarmsTopic));
+
+    const authorizerFuctionMetric = authorizerFunction.metricErrors({
+      statistic: 'Sum',
+      period: Duration.seconds(60),
+    });
+
+    const authorizerFunctionAlarm = new cloudwatch.Alarm(this, 'authorizer-function-errors-alarm', {
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+      threshold: 1,
+      evaluationPeriods: 1,
+      metric: authorizerFuctionMetric,
+    });
+    authorizerFunctionAlarm.addAlarmAction(new cloudwatchActions.SnsAction(alarmsTopic));
+
+    const usersFunctionMetric = usersFunction.metricErrors({
+      statistic: 'Sum',
+      period: Duration.seconds(60),
+    });
+
+    const usersFunctionAlarm = new cloudwatch.Alarm(this, 'users-function-errors-alarm', {
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+      threshold: 1,
+      evaluationPeriods: 1,
+      metric: usersFunctionMetric,
+    });
+    usersFunctionAlarm.addAlarmAction(new cloudwatchActions.SnsAction(alarmsTopic));
+
+    const usersFunctionThrottlingMetric = usersFunction.metricThrottles({
+      statistic: 'Sum',
+      period: Duration.seconds(60),
+    });
+
+    const usersFunctionThrottlingAlarm = new cloudwatch.Alarm(this, 'users-function-throttling-alarm', {
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+      threshold: 1,
+      evaluationPeriods: 1,
+      metric: usersFunctionThrottlingMetric,
+    });
+    usersFunctionThrottlingAlarm.addAlarmAction(new cloudwatchActions.SnsAction(alarmsTopic));
+
     new CfnOutput(this, 'UserPool', {
       description: 'Cognito User Pool ID',
       value: userPool.userPoolId,
@@ -204,5 +264,10 @@ export class WsServerlessPatternsStack extends Stack {
       description: 'AWS CLI command for Amazon Cognito User Pool authentication',
       value: `aws cognito-idp initiate-auth --auth-flow USER_PASSWORD_AUTH --client-id ${userPoolClientId} --auth-parameters USERNAME=<user@example.com>,PASSWORD=<password>`
     });
-  }  
+
+    new CfnOutput(this, 'AlarmsTopic', {
+      description: 'SNS Topic to be used for the alarms subscriptions',
+      value: alarmsTopic.topicArn,
+    });
+  }
 }
