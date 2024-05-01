@@ -214,6 +214,19 @@ export class WsServerlessPatternsStack extends Stack {
     });
     authorizerFunctionAlarm.addAlarmAction(new cloudwatchActions.SnsAction(alarmsTopic));
 
+    const authorizerThrottlingMetric = authorizerFunction.metricThrottles({
+      statistic: 'Sum',
+      period: Duration.seconds(60),
+    });
+
+    const authorizerThrottlingAlarm = new cloudwatch.Alarm(this, 'authorizor-throttling-alarm', {
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+      threshold: 1,
+      evaluationPeriods: 1,
+      metric: authorizerThrottlingMetric,
+    });
+    authorizerThrottlingAlarm.addAlarmAction(new cloudwatchActions.SnsAction(alarmsTopic));
+
     const usersFunctionMetric = usersFunction.metricErrors({
       statistic: 'Sum',
       period: Duration.seconds(60),
@@ -239,6 +252,52 @@ export class WsServerlessPatternsStack extends Stack {
       metric: usersFunctionThrottlingMetric,
     });
     usersFunctionThrottlingAlarm.addAlarmAction(new cloudwatchActions.SnsAction(alarmsTopic));
+
+    const dashboard = new cloudwatch.Dashboard(this, 'alarms-dashboard', {
+      defaultInterval: Duration.days(7),
+      dashboardName: `${Aws.STACK_NAME}-dashboard`,
+      widgets: [[ 
+        new cloudwatch.GraphWidget({
+          title: 'Users Lambda',
+          period: Duration.seconds(60),
+          statistic: 'Sum',
+          left: [
+            usersFunction.metricInvocations(),
+            usersFunction.metricErrors(),
+            usersFunction.metricThrottles(),
+            usersFunction.metricDuration({ statistic: 'Average'}),
+            usersFunction.metric('ConcurrentExecutions', 
+              { statistic: 'Maximum' }),
+          ]
+        }), new cloudwatch.GraphWidget({
+          title: 'Authorizer Lambda',
+          period: Duration.seconds(60),
+          statistic: 'Sum',
+          left: [
+            authorizerFunction.metricInvocations(),
+            authorizerFunction.metricErrors(),
+            authorizerFunction.metricThrottles(),
+            authorizerFunction.metricDuration({ statistic: 'Average'}),
+            authorizerFunction.metric('ConcurrentExecutions', 
+              { statistic: 'Maximum' }),
+          ] 
+        }), new cloudwatch.GraphWidget({
+          title: 'Users API',
+          period: Duration.seconds(60),
+          statistic: 'Sum',
+          left: [
+            api.metric('DataProcessed'),
+            api.metricIntegrationLatency({ statistic: 'Average' }),
+            api.metricLatency({ statistic: 'Average' }),
+          ],
+          right: [
+            api.metricClientError(),
+            api.metricServerError(),
+            api.metricCount(),
+          ]
+        }),
+      ]]
+    });
 
     new CfnOutput(this, 'UserPool', {
       description: 'Cognito User Pool ID',
@@ -268,6 +327,11 @@ export class WsServerlessPatternsStack extends Stack {
     new CfnOutput(this, 'AlarmsTopic', {
       description: 'SNS Topic to be used for the alarms subscriptions',
       value: alarmsTopic.topicArn,
+    });
+
+    new CfnOutput(this, 'DashboardURL', {
+      description: 'CloudWatch Dashboard URL',
+      value: `https://console.aws.amazon.com/cloudwatch/home?region=${Aws.REGION}#dashboards:name=${dashboard.dashboardName}`,
     });
   }
 }
